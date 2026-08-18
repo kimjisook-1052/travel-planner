@@ -5,6 +5,7 @@ import re
 from datetime import datetime
 from dotenv import load_dotenv
 from google import genai
+import requests
 
 load_dotenv()
 
@@ -86,11 +87,48 @@ def get_travel_recommendation(travel_date):
     except Exception as e:
         return None, {"step": "llm_recommendation", "type": "API_ERROR", "message": str(e)}
 
-def main():
-    check_api_keys()
-    travel_date = parse_arguments()
-    print(f"✅ 입력받은 날짜: {travel_date}")
-    print(f"✅ API 키 확인 완료")
+def search_restaurants(city_name):
+    """Kakao Local API로 해당 도시의 맛집을 검색하는 함수"""
+
+    url = "https://dapi.kakao.com/v2/local/search/keyword.json"
+    headers = {
+        "Authorization": f"KakaoAK {KAKAO_REST_API_KEY}"
+    }
+    params = {
+        "query": f"{city_name} 맛집",
+        "category_group_code": "FD6",  # 음식점 카테고리
+        "size": 5  # 5곳만 검색
+    }
+
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=10)
+
+        if response.status_code == 401 or response.status_code == 403:
+            return [], {"step": "place_search", "type": "AUTH_ERROR", "message": f"HTTP {response.status_code}"}
+
+        response.raise_for_status()
+        data = response.json()
+        documents = data.get("documents", [])
+
+        if len(documents) == 0:
+            return [], {"step": "place_search", "type": "EMPTY_RESULT", "message": f"0 results for query={city_name} 맛집"}
+
+        restaurants = []
+        for place in documents:
+            restaurants.append({
+                "name": place.get("place_name", ""),
+                "address": place.get("address_name", ""),
+                "category": place.get("category_name", ""),
+                "url": place.get("place_url", ""),
+                "x": place.get("x", ""),
+                "y": place.get("y", "")
+            })
+
+        return restaurants, None
+
+    except requests.exceptions.RequestException as e:
+        return [], {"step": "place_search", "type": "NETWORK_ERROR", "message": str(e)}
+
 
 def main():
     check_api_keys()
@@ -108,8 +146,18 @@ def main():
         exit(1)
 
     print(f"   - recommended_city: \"{recommendation['recommended_city']}\"")
-    print(f"   - weather: {recommendation['weather']}")
-    print(f"   - reason: {recommendation['reason']}")
+
+    print("[2/3] 맛집 검색 중(지도/장소 API)...")
+    restaurants, place_error = search_restaurants(recommendation['recommended_city'])
+
+    if place_error:
+        errors.append(place_error)
+        print(f"   ⚠️ {place_error['type']}: {place_error['message']}")
+        print("   - 맛집 섹션은 '데이터 없음'으로 처리하고 계속 진행합니다.")
+    else:
+        print(f"   - 맛집 {len(restaurants)}곳 검색 완료")
+        for r in restaurants:
+            print(f"     · {r['name']} ({r['category']})")
 
 
 if __name__ == "__main__":
