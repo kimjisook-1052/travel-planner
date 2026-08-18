@@ -129,6 +129,82 @@ def search_restaurants(city_name):
     except requests.exceptions.RequestException as e:
         return [], {"step": "place_search", "type": "NETWORK_ERROR", "message": str(e)}
 
+def generate_final_report(travel_date, recommendation, restaurants, errors):
+    """1차 추천 + 맛집 목록을 합쳐서 최종 Markdown 리포트를 생성하는 함수"""
+
+    restaurant_text = "데이터 없음"
+    if restaurants:
+        restaurant_lines = [f"- {r['name']} ({r['category']}) - {r['address']}" for r in restaurants]
+        restaurant_text = "\n".join(restaurant_lines)
+
+    events_text = ", ".join(recommendation.get("events", []))
+
+    prompt = f"""
+아래 정보를 바탕으로 국내 여행 리포트를 Markdown 형식으로 작성해주세요.
+
+여행 날짜: {travel_date}
+추천 지역: {recommendation['recommended_city']}
+날씨: {recommendation['weather']}
+행사/축제: {events_text}
+추천 이유: {recommendation['reason']}
+
+맛집 목록:
+{restaurant_text}
+
+아래 형식을 반드시 따라주세요:
+
+# {travel_date} 국내 여행 추천 리포트
+## 추천 지역
+## 추천 이유
+## 날씨 요약
+## 행사/축제
+## 맛집 추천
+## 1일 일정 제안 (오전/오후/저녁)
+
+마크다운 코드블록 기호(```)는 사용하지 말고, 순수 마크다운 텍스트만 출력하세요.
+"""
+
+    try:
+        response = client.models.generate_content(
+            model="gemini-3.6-flash",
+            contents=prompt,
+        )
+        report_text = response.text
+
+        # 오류 요약 섹션 추가
+        if errors:
+            report_text += "\n\n## 오류 요약(errors)\n"
+            for err in errors:
+                report_text += f"- [{err['type']}] {err['step']}: {err['message']}\n"
+        else:
+            report_text += "\n\n## 오류 요약(errors)\n- 없음\n"
+
+        return report_text, None
+    except Exception as e:
+        return None, {"step": "final_report", "type": "API_ERROR", "message": str(e)}
+
+
+def save_results(travel_date, recommendation, restaurants, report_text, errors):
+    """결과 데이터(JSON)와 최종 리포트(Markdown)를 results/ 폴더에 저장하는 함수"""
+
+    os.makedirs("results", exist_ok=True)
+
+    # 원본 데이터 JSON 저장
+    data = {
+        "recommendation": recommendation,
+        "restaurants": restaurants,
+        "errors": errors,
+    }
+    json_path = f"results/{travel_date}_data.json"
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+    # 최종 리포트 Markdown 저장
+    report_path = f"results/{travel_date}_travel_plan.md"
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write(report_text)
+
+    return json_path, report_path
 
 def main():
     check_api_keys()
@@ -154,10 +230,23 @@ def main():
         errors.append(place_error)
         print(f"   ⚠️ {place_error['type']}: {place_error['message']}")
         print("   - 맛집 섹션은 '데이터 없음'으로 처리하고 계속 진행합니다.")
+        restaurants = []
     else:
         print(f"   - 맛집 {len(restaurants)}곳 검색 완료")
-        for r in restaurants:
-            print(f"     · {r['name']} ({r['category']})")
+
+    print("[3/3] 최종 리포트 생성 중(LLM)...")
+    report_text, report_error = generate_final_report(travel_date, recommendation, restaurants, errors)
+
+    if report_error:
+        errors.append(report_error)
+        print(f"   ❌ 오류 발생: {report_error['message']}")
+        exit(1)
+
+    print("   - 리포트 생성 완료")
+
+    json_path, report_path = save_results(travel_date, recommendation, restaurants, report_text, errors)
+
+    print(f"\n완료! {report_path} 를 확인하세요.")
 
 
 if __name__ == "__main__":
