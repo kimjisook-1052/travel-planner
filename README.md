@@ -14,10 +14,12 @@ LLM API와 지도 API, 두 개를 이어붙여서 하나의 흐름으로 만드�
 최종 리포트 생성 (Gemini API) 1, 2단계 결과를 다시 Gemini에게 넘겨서 하나의 여행 리포트(Markdown)로 종합합니다.
 결과 저장 results/ 폴더에 원본 데이터(JSON)와 리포트(Markdown)를 각각 저장합니다.
 <br>
+
 실행 환경
 Python 3.10 이상에서 작업했습니다.
 VSCode 터미널에서 CLI로 실행하는 방식으로 만들었습니다.
 <br>
+
 실행 방법
 1. 패키지 설치
 
@@ -25,6 +27,7 @@ VSCode 터미널에서 CLI로 실행하는 방식으로 만들었습니다.
 
 bash
 pip install -r requirements.txt
+
 2. API 키 설정
 
 프로젝트 폴더에 .env 파일을 만들고, 아래 형식으로 본인이 발급받은 키를 넣으면 됩니다.
@@ -56,6 +59,7 @@ python travel_planner.py --date "2026-03-15"
 
 완료! results/2026-03-15_travel_plan.md 를 확인하세요.
 <br>
+
 결과물 확인 방법
 
 실행이 끝나면 results/ 폴더가 자동으로 생기고, 그 안에 파일 두 개가 저장됩니다.
